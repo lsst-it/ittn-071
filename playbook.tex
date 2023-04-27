@@ -1,0 +1,77 @@
+\section{Playbook}
+
+\begin{enumerate}
+  \item First, we need to open a Jira Ticket to attach our work and set the state to In Progress.
+  \item Clone or update your current version of both repositories in lsst github account lsst-control and lsst-puppet-hiera-private.
+  \item Create a branch on both repositories with the IT ticket number you created. \textit{(ex: IT-3956\_rke\_updates)}
+  \item Update the rke version to match the desired Kubernetes version.
+  \begin{enumerate}[label=(\alph*)]
+    \item Check the rke github repository for the release information \href{https://github.com/rancher/rke/releases}{rke releases}
+      \textit{Note: rke and k8s versions are different, you need to check that the version of rke supports the version of k8s you need to upgrade to.}
+    \item In the rke releases page, search for the kubernetes version you want to upgrade and notice which rke version supports it.
+      \textit{ex: Kubernetes version v1.25.9-rancher2-1 needs rke version v1.4.6-rc2}
+      \textit{use: } \verb|rke config -l -a| \textit{to see supported versions on the current installed rke}
+    \item Update the rke version in the hierarchy on the lsst-control repository and push those changes. 
+          (ex: \href{https://github.com/lsst-it/lsst-control/blob/6a2fa54f9e8eccb3dfe178e0234cd9546ddf0b3d/hieradata/site/cp/role/rke.yaml#L2}{rke.yaml})
+    \item If this is a new version of rke that's never been used, we need to add the checksum of such binaries to the \textit{profile::core::rke} module.
+          (ex: \href{https://github.com/lsst-it/lsst-control/blob/6a2fa54f9e8eccb3dfe178e0234cd9546ddf0b3d/site/profile/manifests/core/rke.pp#L43-L47}{rke.pp})
+  \end{enumerate}
+  \item Once the changes have been pushed, change all the hosts that belong to the cluster into the environment of your branch.
+  \begin{enumerate}[label=(\alph*)]
+    \item Search with \verb|params.role = rke| select the cluster hosts.
+    \item Force puppet to run in those nodes.
+  \end{enumerate}
+  \item Connect to the head node of the cluster via ssh.
+  \item Switch into the user rke with \verb|sudo -iu rke|
+  \item Pre-updates sanity check:
+  \begin{enumerate}[label=(\alph*)]
+    \item Verify the nodes of the cluster are online and ready. \verb|kubectl get nodes|
+    \item Check new version of the rke client. \verb|rke --version|
+    \item If the cluster has \textit{rook-ceph} deployed check on the health status.
+  \end{enumerate}
+  \item Switch to the \textit{k8s-cookbook} repository and update the \textit{cluster.yaml} file in the \textit{rke} folder of the cluster.
+  \begin{enumerate}[label=(\alph*)]
+    \item Update your local repository or clone the \textit{k8s-cookbook}.\\
+      \verb|ex: git clone https://github.com/lsst-it/k8s-cookbook|
+    \item Create a branch on this repository with the same name used in the control repository.
+      \verb|git checkout -b IT-3956_rke_updates|
+    \item Edit the cluster.yaml file inside the rke folder on the selected k8s cluster and change it to the desired version.
+      \verb|ex: kubernetes_version: "v1.25.9-rancher2-1"|
+    \item Stage the file, commit your changes and push them into the remote branch.\\
+      \verb|ex: git add cluster.yaml; git commit -m "(ruka) bump k8s to v1.59.9-rancher2-1"; git push|
+    \item Log into the cluster and switch to the rke user.
+      \verb|ex: sudo -iu rke|
+    \item Update the current repository and switch to your branch.\\
+      \verb|ex: git fetch --all --prune; git checkout IT-3956_rke_updates|
+    \item Ensure the repository is clean with no local changes and the commit is correct.
+      \verb|ex: git status; git log -p|
+  \end{enumerate}
+  \item Announce the update on the relevant Slack channel before proceeding further.
+  \item Set yourself on the rke folder on the selected cluster and run:
+  \begin{enumerate}[label=(\alph*)]
+    \item Save current config with \verb|make tarball|.
+    \item Create a snapshot of the current etcd \verb|make snapshot|.
+    \item Update the version. \verb|rku up|
+    \item Watch the nodes get updated. \verb|kubectl get nodes -w|
+    \item When the process is done is good to run \verb|rke up| again to check the process was idempotent.
+  \end{enumerate}
+  \item Validate and check status on the following:
+  \begin{enumerate}[label=(\alph*)]
+    \item Pods rollouts and broken states with \verb|kubectl get pods -A -w|
+    \textit{Note: canal changes may take a while to rollout}
+    \item Deployments on the kube-system namespace with \verb|kubectl -n kube-system get deployments|
+    \item Deamonset status on the kube-system ns with \verb|kubectl -n kube-system get deamonset|
+    \item Check the status of the rook-ceph deployment if the cluster has one.
+    \textit{Note: Through the dashboard or inside the rook-ceph-tool pod with} \verb|ceph status|
+  \end{enumerate}
+  \item Grab the status of the cluster and report back into the JIRA Ticket.
+  \item Announce on the correct Slack channel that the update is complete.
+  \item Open both branches pull request to merge this new changes into the production branch.
+  \textit{Note: PRs on k8s-cookbook and lsst-control repositories}
+  \item Merged both changes into production and delete the branch created in the
+    \verb|lsst-puppet-hiera-private|
+  \item If the cluster was in the summit then roll forward the \verb|cp_production| branch.
+  \item Go back into foreman and change the corresponding hosts back to the production environment.
+  \item Finally, close the Jira Ticket.
+\end{enumerate}
+\newpage
